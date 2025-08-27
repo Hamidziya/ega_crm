@@ -33,6 +33,14 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+// Health check endpoint
+app.get('/', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    message: 'Server is running',
+    timestamp: new Date().toISOString()
+  });
+});
 
 // API routes
 app.use('/api', AppRoutes);

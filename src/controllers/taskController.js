@@ -8,73 +8,92 @@ import LeadUpdate from '../models/LeadUpdate.js';
 // Create new task/lead
 const createTask = async (req, res) => {
   try {
-    const { title, description, assignedTo, frontendUrl, backendUrl } = req.body;
+    const respdata = req.body;
+    console.log("Request body:", JSON.stringify(respdata));
+    respdata.createdBy = req.headers.userId;
 
-    const task = await Task.create({
-      title,
-      description,
-      createdBy: req.headers.userId,
-      //: assignedTo || null,
-      frontendUrl: frontendUrl || '',
-      backendUrl: backendUrl || ''
-    });
+    // If assignedTo is empty string, remove it
+    if (!respdata.assignedTo || respdata.assignedTo === "") {
+      delete respdata.assignedTo;
+    }
+
+    const task = await Task.create(respdata);
 
     // Create initial lead update
     await LeadUpdate.create({
       taskId: task._id,
       updatedBy: req.headers.userId,
-      updateType: 'status_change',
+      updateType: "status_change",
       oldStatus: null,
-      newStatus: 'Pending',
-      notes: 'Lead created'
+      newStatus: "Pending",
+      notes: "Lead created",
     });
 
-    res.status(201).json({ message: 'Task created successfully', task });
+    res.status(201).json({ message: "Task created successfully", task });
   } catch (error) {
-    res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    res.status(500).json({ message: "Internal Server Error", error: error.message });
   }
 };
+
 
 // Bulk create tasks
 const bulkCreate = async (req, res) => {
   try {
     const { tasks } = req.body;
-    
+    console.log("Received tasks for bulk creation:", JSON.stringify(tasks));
+
     if (!tasks || !Array.isArray(tasks)) {
       return res.status(400).json({ message: "Tasks array is required" });
     }
-    
-    const tasksWithCreator = tasks.map(task => ({
-      title: task.title,
-      description: task.description,
-      createdBy: req.headers.userId,
-      //assignedTo: task.assignedTo || null,
-      frontendUrl: task.frontendUrl || '',
-      backendUrl: task.backendUrl || ''
-    }));
-    
-    const result = await Task.insertMany(tasksWithCreator);
-    
-    // Create lead updates for each task
+
+    const tasksWithDefaults = tasks.map(task => {
+      const taskData = {
+        name: task.name,
+        email: task.email,
+        mobile: task.mobile,
+        title: task.title,
+        description: task.description,
+        createdBy: req.headers.userId,
+        frontendUrl: task.frontendUrl || '',
+        backendUrl: task.backendUrl || '',
+        isDelete: false,   // ✅ schema default
+        inActive: true     // ✅ schema default
+      };
+
+      // ✅ only include assignedTo if it's valid (not empty string/null)
+      if (task.assignedTo && task.assignedTo !== "") {
+        taskData.assignedTo = task.assignedTo;
+      }
+
+      return taskData;
+    });
+
+    // Insert tasks
+    const result = await Task.insertMany(tasksWithDefaults);
+
+    // Create lead updates for each created task
     const leadUpdates = result.map(task => ({
       taskId: task._id,
       updatedBy: req.headers.userId,
-      updateType: 'status_change',
+      updateType: "status_change",
       oldStatus: null,
-      newStatus: 'Pending',
-      notes: 'Lead created via bulk import'
+      newStatus: "Pending",
+      notes: "Lead created via bulk import"
     }));
-    
+
     await LeadUpdate.insertMany(leadUpdates);
-    
-    res.status(201).json({ 
+
+    res.status(201).json({
       message: `Successfully created ${result.length} tasks`,
       tasks: result
     });
   } catch (error) {
+    console.error("Bulk create error:", error.message);
     res.status(500).json({ message: "Internal server error", error: error.message });
   }
 };
+
+
 
 // Add lead update
 const addLeadUpdate = async (req, res) => {
@@ -109,11 +128,10 @@ const addLeadUpdate = async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error', error: error.message });
   }
 };
-
 // Get all tasks with lead updates (Admin view)
 const getAllTasks = async (req, res) => {
   try {
-    const tasks = await Task.find()
+    const tasks = await Task.find({ isDelete: false })   // ✅ only non-deleted
       .populate('createdBy', 'name email')
       .populate('assignedTo', 'name email')
       .sort({ createdAt: -1 });
@@ -124,12 +142,11 @@ const getAllTasks = async (req, res) => {
   }
 };
 
-// Get user's assigned tasks with updates
+// Get user's assigned tasks
 const getUserTasks = async (req, res) => {
   try {
     const userId = req.headers.userId;
-    
-    const tasks = await Task.find({ assignedTo: userId })
+    const tasks = await Task.find({ assignedTo: userId, isDelete: false }) // ✅
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
 
@@ -143,8 +160,7 @@ const getUserTasks = async (req, res) => {
 const getTaskUpdates = async (req, res) => {
   try {
     const { taskId } = req.params;
-    
-    const updates = await LeadUpdate.find({ taskId })
+    const updates = await LeadUpdate.find({ taskId, isDelete: false }) // ✅
       .populate('updatedBy', 'name email')
       .sort({ createdAt: -1 });
 
@@ -246,7 +262,7 @@ const getTaskById = async (req, res) => {
       }
   
       // Find tasks assigned to the specified user
-      const tasks = await Task.find({ assignedTo });
+      const tasks = await Task.find({  assignedTo: assignedTo, isDelete: false  });
   
       if (tasks.length === 0) {
         return res.status(404).json({ message: 'No tasks found for the specified user' });
@@ -258,26 +274,22 @@ const getTaskById = async (req, res) => {
     }
   };
   
-  const getTaskbyTaskId = async (req, res) => {
-    try {
-      const taskId = req.params.taskId;
+const getTaskbyTaskId = async (req, res) => {
+  try {
+    const taskId = req.params.taskId;
 
-      // Check if the task ID is valid
-     
-  
-      // Find the task with the specified ID
-      const task = await Task.findById(taskId);
-  
-      if (!task) {
-        return res.status(404).json({ message: 'Task not found' });
-      }
-  
-      res.status(200).json(task);
-    } catch (error) {
-      console.error('Error fetching task by ID:', error);
-      res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    const task = await Task.findOne({ _id: taskId, isDelete: false }); // ✅
+
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
     }
-  };
+
+    res.status(200).json(task);
+  } catch (error) {
+    res.status(500).json({ message: 'Internal Server Error', error: error.message });
+  }
+};
+
   
   const submitTask = async (req, res) => {
     try {
@@ -319,99 +331,73 @@ const getTaskById = async (req, res) => {
 
 
 // TaskController.js
-
 const getTasksByStatus = async (req, res) => {
-    try {
-        const { status } = req.query;
+  try {
+    const { status } = req.query;
+    let query = { isDelete: false };  // ✅ only active ones
 
-        // Check if the status is "All" to retrieve all tasks
-        let tasks;
-        if (status && status.toLowerCase() === 'all') {
-            tasks = await Task.find();
-        } else if (status) {
-            // Find tasks with the specified status
-            tasks = await Task.find({ status });
-        } else {
-            return res.status(400).json({ message: 'Status parameter is required' });
-        }
-
-        if (tasks.length === 0) {
-            return res.status(404).json({ message: `No tasks with status ${status} found` });
-        }
-
-        res.status(200).json(tasks);
-    } catch (error) {
-        res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    if (status && status.toLowerCase() !== 'all') {
+      query.status = status;
     }
+
+    const tasks = await Task.find(query);
+    if (tasks.length === 0) {
+      return res.status(404).json({ message: `No tasks with status ${status || 'any'} found` });
+    }
+
+    res.status(200).json(tasks);
+  } catch (error) {
+    res.status(500).json({ message: 'Internal Server Error', error: error.message });
+  }
 };
 
-
-
-
-// const getAllTask =async (req, res) => {
-//     try {
-//         // Find all tasks
-//         const tasks = await Task.find();
-
-//         if (tasks.length === 0) {
-//             return res.status(404).json({ message: 'No tasks found' });
-//         }
-
-//         res.status(200).json(tasks);
-//     } catch (error) {
-//         res.status(500).json({ message: 'Internal Server Error', error: error.message });
-//     }
-// };
 const getAllTask = async (req, res) => {
-    try {
-        // Find all tasks
-        const tasks = await Task.find();
+  try {
+    const tasks = await Task.find({ isDelete: false }); // ✅
 
-        if (tasks.length === 0) {
-            return res.status(404).json({ message: 'No tasks found' });
-        }
-
-        // Calculate the number of tasks, pending tasks, and submitted tasks
-        const totalTasks = tasks.length;
-        const pendingTasks = tasks.filter(task => task.status === 'Pending').length;
-        const submittedTasks = tasks.filter(task => task.status === 'Submitted').length;
-
-        res.status(200).json({
-            totalTasks,
-            pendingTasks,
-            submittedTasks,
-            tasks
-        });
-    } catch (error) {
-        res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    if (tasks.length === 0) {
+      return res.status(404).json({ message: 'No tasks found' });
     }
-};
 
+    const totalTasks = tasks.length;
+    const pendingTasks = tasks.filter(task => task.status === 'Pending').length;
+    const submittedTasks = tasks.filter(task => task.status === 'Submitted').length;
+
+    res.status(200).json({
+      totalTasks,
+      pendingTasks,
+      submittedTasks,
+      tasks
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Internal Server Error', error: error.message });
+  }
+};
 
 const deleteTask = async (req, res) => {
-    try {
-        const taskId = req.params.taskId;
+  try {
+    const taskId = req.params.taskId;
 
-        // Check if the task ID is valid
-        if (!mongoose.Types.ObjectId.isValid(taskId)) {
-            return res.status(400).json({ message: 'Invalid task ID' });
-        }
-
-        // Find the task with the specified ID
-        const task = await Task.findById(taskId);
-
-        if (!task) {
-            return res.status(404).json({ message: 'Task not found' });
-        }
-
-        // Perform the deletion
-        await Task.deleteOne({ _id: taskId });
-
-        res.status(200).json({ message: 'Task deleted successfully' });
-    } catch (error) {
-        res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    if (!mongoose.Types.ObjectId.isValid(taskId)) {
+      return res.status(400).json({ message: 'Invalid task ID' });
     }
+
+    const task = await Task.findById(taskId);
+
+    if (!task || task.isDelete) {
+      return res.status(404).json({ message: 'Task not found or already deleted' });
+    }
+
+    // ✅ Soft delete
+    task.isDelete = true;
+    await task.save();
+
+    res.status(200).json({ message: 'Task soft deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Internal Server Error', error: error.message });
+  }
 };
+
 
 
 const editTask = async (req, res) => {

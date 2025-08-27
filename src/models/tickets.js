@@ -1,8 +1,6 @@
 import mongoose from "mongoose";
 import { Status } from "../common/utils.js";
 
-
-
 const ticketSchema = new mongoose.Schema({
     title:{type:String,required:[true,"Title is required"]},
     imageUrl:{type:String,required:[true,"Image url is required"]},
@@ -13,11 +11,15 @@ const ticketSchema = new mongoose.Schema({
     modifiedAt:{type:Date},
     rejectedBy:{type:String},
     reason:{type:String,default:""},
-    createdAt:{type:Date, default:Date.now()}
+    createdAt:{type:Date, default:Date.now()},
+
+    // New fields
+    isDelete: { type: Boolean, default: false },
+    inActive: { type: Boolean, default: true }
 },{
     collection:'tickets',
     versionKey:false
-})
+});
 
-const ticketModel = mongoose.model('tickets',ticketSchema)
-export default ticketModel
+const ticketModel = mongoose.model('tickets',ticketSchema);
+export default ticketModel;

@@ -1,4 +1,3 @@
-// models/LeadUpdate.js
 import mongoose from 'mongoose';
 
 const leadUpdateSchema = new mongoose.Schema({
@@ -26,7 +25,11 @@ const leadUpdateSchema = new mongoose.Schema({
     enum: ['low', 'medium', 'high'], 
     default: 'medium' 
   },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+
+  // New fields
+  isDelete: { type: Boolean, default: false },
+  inActive: { type: Boolean, default: true }
 });
 
 const LeadUpdate = mongoose.model('LeadUpdate', leadUpdateSchema);
